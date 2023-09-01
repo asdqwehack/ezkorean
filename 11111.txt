@@ -1,0 +1,149 @@
+local LocalPlayer = game.Players.LocalPlayer
+local Character = LocalPlayer.Character
+
+local Mouse = LocalPlayer:GetMouse()
+
+local PlayersChar = workspace.Players
+
+if _G.JOINTWATCHER then
+	_G.JOINTWATCHER:Disconnect()
+	_G.Mouser:Disconnect()
+end
+
+local Alignments = {}
+
+local function Align(P0, P1, Offset)
+	return game:GetService("RunService").Heartbeat:Connect(function()
+		P0.Massless = true
+		P0.CFrame = P1.CFrame * Offset
+	end)
+end
+
+local function WaitForChildOfClass(parent: Instance, className: string, timeOut: number)
+	local start = tick()
+	timeOut = timeOut or math.huge
+	repeat 
+		task.wait()
+	until parent:FindFirstChildOfClass(className) or (tick() - start) > timeOut
+	return parent:FindFirstChildOfClass(className)
+end
+
+_G.Mouser = Mouse.KeyDown:Connect(function(Key)
+	if Key:lower() == "t" then
+		if Mouse.Target.Parent:FindFirstChildOfClass("Humanoid") or (Mouse.Target.Parent:IsA("Accessory") and Mouse.Target.Parent.Parent:FindFirstChildOfClass("Humanoid")) then
+			local SelectedCharacter = Mouse.Target.Parent:IsA("Accessory") and Mouse.Target.Parent.Parent or Mouse.Target.Parent
+			
+			if SelectedCharacter.BodyEffects["K.O"].Value ~= true then return end
+			
+			for i = 1, 10 do
+				task.wait()
+				LocalPlayer.Character.Humanoid.RootPart.CFrame = CFrame.new(SelectedCharacter.LowerTorso.CFrame.Position) * CFrame.new(0, 2, 0)
+			end
+			
+			game.ReplicatedStorage.MainEvent:FireServer("Grabbing", true)
+		end
+	end
+end)
+
+_G.JOINTWATCHER = PlayersChar.DescendantAdded:Connect(function(Ins)
+	if Ins:IsA("Weld") and Ins.Name == "GRABBING_CONSTRAINT" then
+		WaitForChildOfClass(Ins, "RopeConstraint").Length = 9e9
+		
+		local OldPos
+		local OldParent = Ins.Parent
+		local OldWS = LocalPlayer.Character.Humanoid.WalkSpeed
+		
+		local dummyFolder = Instance.new("Folder", LocalPlayer.Character)
+		local newDummy
+		local ClientController
+		
+		local ParentWatcher
+		local AnimationPlayed
+		
+		local AlignConnections = {}
+		
+		local BlacklistedAnims = {}
+		
+		for _, Class in pairs(LocalPlayer.Character:GetDescendants()) do
+			if Class:IsA("Animation") then
+				BlacklistedAnims[Class.AnimationId] = true
+			end
+		end
+		
+		function Stop()
+			LocalPlayer.Character.Humanoid.WalkSpeed = OldWS
+	
+			LocalPlayer.Character.Humanoid.RootPart.CFrame = CFrame.new(newDummy.PrimaryPart.Position) * CFrame.new(0, 5, 0)
+			workspace.CurrentCamera.CameraSubject = LocalPlayer.Character
+			
+			for _, Connection in pairs(AlignConnections) do
+				Connection:Disconnect()
+			end
+			
+			dummyFolder:Destroy()
+			newDummy:Destroy()
+			ParentWatcher:Disconnect()
+			ClientController:Disconnect()
+			AnimationPlayed:Disconnect()
+		end
+		
+		if Ins.Part0:IsDescendantOf(LocalPlayer.Character) then
+			OldParent.Archivable = true
+			
+			OldPos = LocalPlayer.Character.Humanoid.RootPart.CFrame
+			
+			newDummy = Ins.Parent:Clone()
+			newDummy.Humanoid.RootPart.Anchored = false
+			newDummy.Animate.Disabled = true
+			newDummy["GRABBING_CONSTRAINT"]:Destroy()
+			newDummy.Parent = dummyFolder
+			wait()
+			newDummy.Animate.Disabled = false
+			newDummy.Humanoid:ChangeState("GettingUp")
+			
+			workspace.CurrentCamera.CameraSubject = newDummy
+			
+			LocalPlayer.Character.Humanoid.RootPart.CFrame = CFrame.new(0, 26, 3)
+			
+			ClientController = game:GetService("RunService").RenderStepped:Connect(function()
+				LocalPlayer.Character.Humanoid.WalkSpeed = 0
+				
+				newDummy.Humanoid.Jump = LocalPlayer.Character.Humanoid.Jump
+				newDummy.Humanoid:Move(LocalPlayer.Character.Humanoid.MoveDirection, false)
+				
+				for _, Base in pairs(newDummy:GetDescendants()) do
+					if Base:IsA("BasePart") then
+						Base.CanCollide = false
+						Base.Transparency = 1
+					end
+				end
+				
+				for _, Base in pairs(OldParent:GetChildren()) do
+					if Base:IsA("BasePart") then
+						Base.CanCollide = false
+					end
+				end
+				
+				if Ins.Parent ~= OldParent or OldParent.Parent ~= PlayersChar then
+					Stop()
+				end
+			end)
+			
+			for _, Base in pairs(OldParent:GetChildren()) do
+				if Base:IsA("BasePart") then
+					table.insert(AlignConnections, Align(Base, newDummy[Base.Name], CFrame.new(0, 0, 0)))
+				end
+			end
+		end
+		
+		ParentWatcher = Ins:GetPropertyChangedSignal("Parent"):Connect(Stop)
+		
+		AnimationPlayed = LocalPlayer.Character.Humanoid.Animator.AnimationPlayed:Connect(function(Anim)
+			if BlacklistedAnims[Anim.Animation.AnimationId] ~= true then
+				local anim = newDummy.Humanoid:LoadAnimation(Anim.Animation)
+				anim:Play()
+				print(anim)
+			end
+		end)
+	end
+end)
